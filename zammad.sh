@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Überprüfen, ob das Skript mit dem gewünschten Namen (z.B. zammad.sh) aufgerufen wird
+if [ "$0" != "./zammad.sh" ]; then
+    echo "Bitte führen Sie das Skript mit dem Namen 'zammad.sh' aus."
+    exit 1
+fi
+
 # Update the system
 apt update
 apt upgrade -y
