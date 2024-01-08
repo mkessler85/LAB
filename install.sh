@@ -1,86 +1,45 @@
 #!/bin/bash
 
-# Funktion für die Installation von Zammad
-install_zammad() {
-    echo "Installing Zammad..."
+# Zammad Installationsskript für Ubuntu
 
-    # Zammad herunterladen und installieren
-    curl -sSL https://packages.zammad.org/zammad/zammad-latest.tar.gz | tar xz -C /opt
-    cd /opt/zammad
+# Aktualisiere das System
+sudo apt update
+sudo apt upgrade -y
 
-    # Konfiguration der Datenbank
-    configure_database
+# Installiere benötigte Pakete
+sudo apt install -y curl wget apt-transport-https vim
 
-    # Konfiguration von Elasticsearch
-    configure_elasticsearch
+# Installiere PostgreSQL
+sudo apt install -y postgresql postgresql-contrib
 
-    # Zammad Setup ausführen
-    ./install.sh
+# Erstelle einen PostgreSQL-Benutzer für Zammad
+sudo -u postgres psql -c "CREATE USER zammad WITH PASSWORD 'deinPasswort';"
+sudo -u postgres psql -c "ALTER USER zammad WITH SUPERUSER;"
 
-    echo "Zammad installation completed."
-}
+# Erstelle die Datenbank für Zammad
+sudo -u postgres createdb -O zammad zammad_production
 
-# Funktion für die Konfiguration der Datenbank
-configure_database() {
-    echo "Configuring Zammad Database..."
+# Installiere Elasticsearch
+sudo apt install -y openjdk-8-jre
+wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+sudo apt update
+sudo apt install -y elasticsearch
 
-    # Benutzereingabe für Datenbank-Details
-    db_host=$(dialog --inputbox "Enter the Zammad database host:" 8 40 --output-fd 1)
-    db_name=$(dialog --inputbox "Enter the Zammad database name:" 8 40 --output-fd 1)
-    db_user=$(dialog --inputbox "Enter the Zammad database user:" 8 40 --output-fd 1)
-    db_pass=$(dialog --passwordbox "Enter the Zammad database password:" 8 40 --output-fd 1)
+# Starte Elasticsearch
+sudo systemctl start elasticsearch
+sudo systemctl enable elasticsearch
 
-    # PostgreSQL-Datenbank erstellen
-    sudo -u postgres psql -c "CREATE DATABASE ${db_name} WITH ENCODING='UTF8' LC_COLLATE='C' LC_CTYPE='C' TEMPLATE=template0;"
-    sudo -u postgres psql -c "CREATE USER ${db_user} WITH PASSWORD '${db_pass}';"
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${db_name} TO ${db_user};"
+# Installiere Zammad
+wget -qO- https://ftp.zammad.com/zammad-latest.tar.gz | sudo tar xvz -C /opt
+sudo ln -s /opt/zammad-*/ /opt/zammad
 
-    # Konfigurationsdatei für Zammad aktualisieren
-    sed -i "s/production:\n  adapter: sqlite3/production:\n  adapter: postgresql\n  database: ${db_name}\n  host: ${db_host}\n  username: ${db_user}\n  password: ${db_pass}/" /opt/zammad/config/database.yml
+# Konfiguriere Zammad
+sudo /opt/zammad/contrib/nginx/zammad-nginx.conf
+sudo /opt/zammad/contrib/nginx/zammad-nginx-ssl.conf
 
-    echo "Zammad Database configuration completed."
-}
+# Starte Zammad-Dienste
+sudo systemctl restart elasticsearch
+sudo systemctl restart zammad
 
-# Funktion für die Konfiguration von Elasticsearch
-configure_elasticsearch() {
-    echo "Configuring Zammad Elasticsearch..."
-
-    # Benutzereingabe für Elasticsearch-Details
-    es_host=$(dialog --inputbox "Enter the Elasticsearch host:" 8 40 --output-fd 1)
-    es_port=$(dialog --inputbox "Enter the Elasticsearch port (default is 9200):" 8 40 --output-fd 1)
-
-    # Konfigurationsdatei für Zammad aktualisieren
-    sed -i "s/\# elasticsearch:\n\#   hosts: localhost:9200/elasticsearch:\n  hosts: ${es_host}:${es_port}/" /opt/zammad/config/elasticsearch.yml
-
-    echo "Zammad Elasticsearch configuration completed."
-}
-
-# Benutzereingabe für den Container-Namen
-container_name=$(dialog --inputbox "Enter the Proxmox LXC container name:" 8 40 --output-fd 1)
-
-# Benutzereingabe für die IP-Adresse des Containers
-container_ip=$(dialog --inputbox "Enter the IP address for the container:" 8 40 --output-fd 1)
-
-# Benutzereingabe für die Subnetzmaske
-subnet_mask=$(dialog --inputbox "Enter the subnet mask for the container:" 8 40 --output-fd 1)
-
-# Benutzereingabe für das Gateway
-gateway=$(dialog --inputbox "Enter the gateway for the container:" 8 40 --output-fd 1)
-
-# Proxmox LXC erstellen
-echo "Creating Proxmox LXC container..."
-pct create ${container_name} -osturnkey -arch amd64
-
-# Netzwerkkonfiguration für den Container
-pct set ${container_name} --ip ${container_ip} --net0 name=eth0,bridge=vmbr0,firewall=1,gw=${gateway},ip=${subnet_mask}
-
-# Container starten
-pct start ${container_name}
-
-# Warten Sie, bis der Container gestartet ist
-sleep 10
-
-# Zammad installieren
-install_zammad
-
-echo "Proxmox LXC and Zammad installation completed."
+echo "Zammad wurde erfolgreich installiert. Du kannst auf die Webanwendung unter http://DEINE_SERVER_IP aufrufen."
